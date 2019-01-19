@@ -1,0 +1,7 @@
+[package]
+name = "org-rs"
+version = "0.1.0"
+authors = ["Scott Trinh <scott@scotttrinh.com>"]
+edition = "2018"
+
+[dependencies]
