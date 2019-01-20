@@ -1,0 +1,7 @@
+* org-rs: An Org mode parser for Rust
+
+** Why
+
+Allow parsing Org mode files into efficient structures. Using rust allows
+compiling to the web, native mobile, and desktop efficiently and allows for
+embedding into other languages that have a good FFI to C.
