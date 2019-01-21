@@ -1,9 +1,11 @@
 #[macro_use]
 extern crate nom;
+#[macro_use]
 extern crate im;
 
-use nom::{is_alphabetic};
+use std::str;
 use im::{OrdMap, OrdSet, Vector};
+use nom::{is_alphabetic, is_alphanumeric};
 
 #[allow(dead_code)]
 pub struct OrgContext {
@@ -12,6 +14,7 @@ pub struct OrgContext {
 }
 
 #[allow(dead_code)]
+#[derive(Eq, PartialEq, Debug, Clone)]
 enum OrgElement {
     Block,
     Drawer,
@@ -22,13 +25,15 @@ enum OrgElement {
 }
 
 #[allow(dead_code)]
+#[derive(Eq, PartialEq, Debug)]
 pub struct OrgSection {
     contents: Vector<OrgElement>,
 }
 
 #[allow(dead_code)]
+#[derive(Eq, PartialEq, Debug)]
 pub struct OrgNode {
-    depth: u8,
+    depth: usize,
     keyword: Option<String>,
     priority: Option<char>,
     title: Option<String>,
@@ -40,11 +45,65 @@ pub struct OrgNode {
     body: Option<OrgSection>,
 }
 
+fn is_valid_tag_char(candidate: u8) -> bool {
+    let candidate_char = candidate as char;
+    is_alphanumeric(candidate) || candidate_char == '_' || candidate_char == '@'
+}
+
+fn maybe_get_single_char(candidate: Option<&[u8]>) -> Option<char> {
+    match candidate {
+        None => None,
+        Some(x) => if x.len() == 1 { Some(x[0] as char) } else { None }
+    }
+}
+
 named!(headline_depth<&[u8], usize>, fold_many1!(tag!("*"), 0, |depth, _| depth + 1));
-named!(keyword, alt!(tag!("TODO") | tag!("DONE")));
-named!(priority, delimited!(tag!("[#"), take_while_m_n!(1, 1, is_alphabetic), tag!("]")));
-named!(tags, delimited!(tag!(":"), take_until!(":"), tag!(":\n")));
-named!(tag_list<&[u8], Vec<&[u8]>>, separated_list!(tag!(":"), is_not!(":")));
+named!(keyword<&str>, map_res!(
+    alt!(tag!("TODO") | tag!("DONE")),
+    str::from_utf8
+));
+named!(
+    priority,
+    delimited!(
+        tag!("[#"),
+        take_while_m_n!(1, 1, is_alphabetic),
+        tag!("]")
+    )
+);
+named!(
+    tag_list<Vec<&[u8]>>,
+    delimited!(
+        tag!(":"),
+        separated_list_complete!(
+            char!(':'),
+            take_while!(is_valid_tag_char)
+        ),
+        tag!(":")
+    )
+);
+
+named!(
+    node<OrgNode>,
+    do_parse!(
+        depth: ws!(headline_depth) >>
+        keyword: opt!(ws!(keyword)) >>
+        priority: opt!(ws!(priority)) >>
+        (
+            OrgNode {
+                depth: depth,
+                keyword: keyword.map(String::from),
+                priority: maybe_get_single_char(priority),
+                title: None,
+                tags: ordset![],
+                body: None,
+                scheduled: None,
+                deadline: None,
+                closed: None,
+                properties: ordmap!{}
+            }
+        )
+    )
+);
 
 #[cfg(test)]
 mod tests {
@@ -52,12 +111,18 @@ mod tests {
 
     #[test]
     fn get_headline_depth() {
-        assert_eq!(headline_depth(b"***** TODO [#A] Heading"), Ok((&b" TODO [#A] Heading"[..], 5)))
+        assert_eq!(
+            headline_depth(b"***** TODO [#A] Heading"),
+            Ok((&b" TODO [#A] Heading"[..], 5))
+        )
     }
 
     #[test]
     fn get_keyword() {
-        assert_eq!(keyword(b"TODO [#A] Heading"), Ok((&b" [#A] Heading"[..], &b"TODO"[..])))
+        assert_eq!(
+            keyword(b"TODO [#A] Heading"),
+            Ok((&b" [#A] Heading"[..], "TODO"))
+        )
     }
 
     #[test]
@@ -67,6 +132,31 @@ mod tests {
 
     #[test]
     fn get_tag_list() {
-        assert_eq!(tag_list(b"one:TWO:3hree"), Ok((&[][..], vec![&b"one"[..], &b"TWO"[..], &b"3hree"[..]])));
+        assert_eq!(
+            tag_list(b":one:TWO:3hree:four:"),
+            Ok((&[][..], vec![&b"one"[..], &b"TWO"[..], &b"3hree"[..], &b"four"[..]]))
+        );
+    }
+
+    #[test]
+    fn get_node() {
+        assert_eq!(
+            node(b"*** TODO [#A] Some headline title :one:TWO:"),
+            Ok((
+                &[][..],
+                OrgNode {
+                    depth: 3,
+                    keyword: Some(format!("TODO")),
+                    priority: Some('A'),
+                    title: Some(format!("Some headline title")),
+                    tags: ordset![format!("one"), format!("TWO")],
+                    closed: None,
+                    deadline: None,
+                    scheduled: None,
+                    properties: ordmap!{},
+                    body: None
+                }
+            ))
+        );
     }
 }
