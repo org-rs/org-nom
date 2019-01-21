@@ -3,9 +3,9 @@ extern crate nom;
 #[macro_use]
 extern crate im;
 
-use std::str;
 use im::{OrdMap, OrdSet, Vector};
 use nom::{is_alphabetic, is_alphanumeric};
+use std::str;
 
 #[allow(dead_code)]
 pub struct OrgContext {
@@ -53,31 +53,30 @@ fn is_valid_tag_char(candidate: u8) -> bool {
 fn maybe_get_single_char(candidate: Option<&[u8]>) -> Option<char> {
     match candidate {
         None => None,
-        Some(x) => if x.len() == 1 { Some(x[0] as char) } else { None }
+        Some(x) => {
+            if x.len() == 1 {
+                Some(x[0] as char)
+            } else {
+                None
+            }
+        }
     }
 }
 
 named!(headline_depth<&[u8], usize>, fold_many1!(tag!("*"), 0, |depth, _| depth + 1));
-named!(keyword<&str>, map_res!(
-    alt!(tag!("TODO") | tag!("DONE")),
-    str::from_utf8
-));
+named!(
+    keyword<&str>,
+    map_res!(alt!(tag!("TODO") | tag!("DONE")), str::from_utf8)
+);
 named!(
     priority,
-    delimited!(
-        tag!("[#"),
-        take_while_m_n!(1, 1, is_alphabetic),
-        tag!("]")
-    )
+    delimited!(tag!("[#"), take_while_m_n!(1, 1, is_alphabetic), tag!("]"))
 );
 named!(
     tag_list<Vec<&[u8]>>,
     delimited!(
         tag!(":"),
-        separated_list_complete!(
-            char!(':'),
-            take_while!(is_valid_tag_char)
-        ),
+        separated_list_complete!(char!(':'), take_while!(is_valid_tag_char)),
         tag!(":")
     )
 );
@@ -85,11 +84,10 @@ named!(
 named!(
     node<OrgNode>,
     do_parse!(
-        depth: ws!(headline_depth) >>
-        keyword: opt!(ws!(keyword)) >>
-        priority: opt!(ws!(priority)) >>
-        (
-            OrgNode {
+        depth: ws!(headline_depth)
+            >> keyword: opt!(ws!(keyword))
+            >> priority: opt!(ws!(priority))
+            >> (OrgNode {
                 depth: depth,
                 keyword: keyword.map(String::from),
                 priority: maybe_get_single_char(priority),
@@ -99,9 +97,8 @@ named!(
                 scheduled: None,
                 deadline: None,
                 closed: None,
-                properties: ordmap!{}
-            }
-        )
+                properties: ordmap! {}
+            })
     )
 );
 
@@ -134,7 +131,10 @@ mod tests {
     fn get_tag_list() {
         assert_eq!(
             tag_list(b":one:TWO:3hree:four:"),
-            Ok((&[][..], vec![&b"one"[..], &b"TWO"[..], &b"3hree"[..], &b"four"[..]]))
+            Ok((
+                &[][..],
+                vec![&b"one"[..], &b"TWO"[..], &b"3hree"[..], &b"four"[..]]
+            ))
         );
     }
 
@@ -153,7 +153,7 @@ mod tests {
                     closed: None,
                     deadline: None,
                     scheduled: None,
-                    properties: ordmap!{},
+                    properties: ordmap! {},
                     body: None
                 }
             ))
