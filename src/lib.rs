@@ -4,7 +4,7 @@ extern crate nom;
 extern crate im;
 
 use im::{OrdMap, OrdSet, Vector};
-use nom::{is_alphabetic, is_alphanumeric};
+use nom::{is_alphabetic, is_alphanumeric, is_space, line_ending};
 use std::str;
 
 #[allow(dead_code)]
@@ -72,6 +72,7 @@ named!(
     priority,
     delimited!(tag!("[#"), take_while_m_n!(1, 1, is_alphabetic), tag!("]"))
 );
+named!(eol, call!(line_ending));
 named!(
     tag_list<Vec<&[u8]>>,
     delimited!(
@@ -81,18 +82,41 @@ named!(
     )
 );
 
+fn is_not_eol_or_tag_delimiter(c: u8) -> bool {
+    c != b'\n' && c != b':'
+}
+
+fn to_string_vec(x: Vec<&[u8]>) -> Vec<String> {
+    x.iter()
+        .map(|y| String::from_utf8(y.to_vec()).unwrap())
+        .collect()
+}
+
+named!(
+    title<&str>,
+    map_res!(take_while1!(is_not_eol_or_tag_delimiter), str::from_utf8)
+);
+
 named!(
     node<OrgNode>,
     do_parse!(
-        depth: ws!(headline_depth)
-            >> keyword: opt!(ws!(keyword))
-            >> priority: opt!(ws!(priority))
+        depth: headline_depth
+            >> take_while1!(is_space)
+            >> keyword: opt!(keyword)
+            >> take_while1!(call!(is_space))
+            >> priority: opt!(priority)
+            >> take_while1!(call!(is_space))
+            >> title: opt!(title)
+            >> tags: opt!(tag_list)
             >> (OrgNode {
                 depth: depth,
                 keyword: keyword.map(String::from),
                 priority: maybe_get_single_char(priority),
-                title: None,
-                tags: ordset![],
+                title: title.map(String::from),
+                tags: match tags {
+                    None => OrdSet::new(),
+                    Some(a) => OrdSet::from(to_string_vec(a)),
+                },
                 body: None,
                 scheduled: None,
                 deadline: None,
@@ -141,14 +165,14 @@ mod tests {
     #[test]
     fn get_node() {
         assert_eq!(
-            node(b"*** TODO [#A] Some headline title :one:TWO:"),
+            node(b"*** TODO     [#A]   Some headline title :one:TWO:"),
             Ok((
                 &[][..],
                 OrgNode {
                     depth: 3,
                     keyword: Some(format!("TODO")),
                     priority: Some('A'),
-                    title: Some(format!("Some headline title")),
+                    title: Some(format!("Some headline title ")),
                     tags: ordset![format!("one"), format!("TWO")],
                     closed: None,
                     deadline: None,
