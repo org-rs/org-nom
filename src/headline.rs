@@ -1,6 +1,6 @@
-use std::str;
 use im::OrdSet;
 use nom::{is_alphabetic, is_alphanumeric, is_digit};
+use std::str;
 
 #[derive(Eq, PartialEq, Debug, Clone)]
 pub struct Headline {
@@ -75,10 +75,7 @@ named!(
     )
 );
 
-named!(
-    stats<Stat>,
-    alt!(stats_percentage | stats_ratio)
-);
+named!(stats<Stat>, alt!(stats_percentage | stats_ratio));
 
 fn is_valid_tag_char(candidate: u8) -> bool {
     let candidate_char = candidate as char;
@@ -155,10 +152,7 @@ mod tests {
 
     #[test]
     fn get_stats_ratio() {
-        assert_eq!(
-            stats_ratio(b"[3/4]"),
-            Ok((&[][..], Stat::Ratio(3u8, 4u8)))
-        );
+        assert_eq!(stats_ratio(b"[3/4]"), Ok((&[][..], Stat::Ratio(3u8, 4u8))));
         assert_eq!(
             stats_ratio(b"[12/4]"),
             Ok((&[][..], Stat::Ratio(12u8, 4u8)))
@@ -167,10 +161,7 @@ mod tests {
 
     #[test]
     fn get_stats() {
-        assert_eq!(
-            stats(b"[3/4]"),
-            Ok((&[][..], Stat::Ratio(3u8, 4u8)))
-        );
+        assert_eq!(stats(b"[3/4]"), Ok((&[][..], Stat::Ratio(3u8, 4u8))));
         assert_eq!(
             stats_percentage(b"[23%]"),
             Ok((&[][..], Stat::Percentage(23u8)))
