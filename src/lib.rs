@@ -7,6 +7,8 @@ use im::{OrdMap, OrdSet, Vector};
 use nom::{is_alphabetic, is_alphanumeric, is_space, line_ending};
 use std::str;
 
+mod headline;
+
 #[allow(dead_code)]
 pub struct OrgContext {
     keywords: OrdSet<String>,
