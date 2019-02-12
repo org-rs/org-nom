@@ -1,16 +1,16 @@
 use im::OrdSet;
-use nom::{is_alphabetic, is_alphanumeric, is_digit};
+use nom::{is_alphabetic, is_alphanumeric, is_digit, line_ending, multispace};
 use std::str;
 
 #[derive(Eq, PartialEq, Debug, Clone)]
 pub struct Headline {
-    depth: u8,
-    keyword: Option<String>,
-    priority: Option<char>,
-    title: Option<String>,
-    timestamp: Option<String>,
-    stats: Option<Stat>,
-    tags: OrdSet<String>,
+    pub depth: u8,
+    pub keyword: Option<String>,
+    pub priority: Option<char>,
+    pub title: Option<String>,
+    pub timestamp: Option<String>,
+    pub stats: Option<Stat>,
+    pub tags: OrdSet<String>,
 }
 
 #[derive(Eq, PartialEq, Debug, Clone)]
@@ -22,15 +22,12 @@ struct TitleMeta {
 }
 
 #[derive(Eq, PartialEq, Debug, Clone)]
-enum Stat {
+pub enum Stat {
     Percentage(u8),
     Ratio(u8, u8),
 }
 
-named!(
-    headline_depth<usize>,
-    fold_many1!(tag!("*"), 0, |depth, _| depth + 1)
-);
+named!(depth<u8>, fold_many1!(tag!("*"), 0, |depth, _| depth + 1));
 
 named!(
     keyword<&str>,
@@ -91,32 +88,90 @@ named!(
     )
 );
 
-/*
+named!(title_rest, take_while!(call!(|x| x != b'\n')));
+
+fn byte_slice_to_string(x: &[u8]) -> String {
+    String::from(str::from_utf8(x).unwrap())
+}
+
+fn vec_byte_slice_to_vec_string(x: Vec<&[u8]>) -> Vec<String> {
+    x.iter().map(|y| byte_slice_to_string(y)).collect()
+}
+
 named!(
     title_meta<TitleMeta>,
     do_parse!(
         start: opt!(title_start)
+            >> opt!(multispace)
             >> stats: opt!(stats)
+            >> opt!(multispace)
             >> tags: opt!(tag_list)
+            >> opt!(multispace)
             >> leftovers: opt!(title_rest)
             >> (TitleMeta {
-                start: start,
+                start: start.map(String::from),
                 stats: stats,
-                tags: tags,
-                leftovers: leftovers,
+                tags: match tags {
+                    None => ordset![],
+                    Some(x) => OrdSet::from(vec_byte_slice_to_vec_string(x)),
+                },
+                leftovers: leftovers.map(byte_slice_to_string),
             })
     )
 );
-*/
+
+fn maybe_get_single_char(candidate: Option<&[u8]>) -> Option<char> {
+    match candidate {
+        None => None,
+        Some(x) => {
+            if x.len() == 1 {
+                Some(x[0] as char)
+            } else {
+                None
+            }
+        }
+    }
+}
+
+named!(
+    pub headline<Headline>,
+    do_parse!(
+        depth: depth
+            >> multispace
+            >> keyword: opt!(keyword)
+            >> multispace
+            >> priority: opt!(priority)
+            >> multispace
+            >> title_meta: title_meta
+            >> (Headline {
+                depth: depth,
+                keyword: keyword.map(String::from),
+                priority: maybe_get_single_char(priority),
+                stats: title_meta.stats,
+                timestamp: None,
+                title: match title_meta.start {
+                    None => match title_meta.leftovers {
+                        None => None,
+                        Some(a) => Some(format!("{}", a)),
+                    },
+                    Some(a) => match title_meta.leftovers {
+                        None => Some(format!("{}", a)),
+                        Some(b) => Some(format!("{}{}", a, b))
+                    }
+                },
+                tags: title_meta.tags
+            })
+    )
+);
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn get_headline_depth() {
+    fn get_depth() {
         assert_eq!(
-            headline_depth(b"***** TODO [#A] Heading"),
+            depth(b"***** TODO [#A] Heading"),
             Ok((&b" TODO [#A] Heading"[..], 5))
         )
     }
@@ -166,5 +221,56 @@ mod tests {
             stats_percentage(b"[23%]"),
             Ok((&[][..], Stat::Percentage(23u8)))
         )
+    }
+
+    #[test]
+    fn get_tag_list() {
+        assert_eq!(
+            tag_list(b":one:TWO:3hree:four:"),
+            Ok((
+                &[][..],
+                vec![&b"one"[..], &b"TWO"[..], &b"3hree"[..], &b"four"[..]]
+            ))
+        );
+    }
+
+    #[test]
+    fn get_title_rest() {
+        assert_eq!(
+            title_rest(b"leftovers\n"),
+            Ok((&b"\n"[..], &b"leftovers"[..]))
+        );
+    }
+
+    #[test]
+    fn get_title_meta() {
+        assert_eq!(
+            title_meta(b"Some title [10%] :tag:list: rest\n"),
+            Ok((&b"\n"[..], TitleMeta {
+                start: Some(format!("Some title ")),
+                stats: Some(Stat::Percentage(10)),
+                tags: ordset![format!("tag"), format!("list")],
+                leftovers: Some(format!("rest"))
+            }))
+        );
+    }
+
+    #[test]
+    fn get_headline() {
+        assert_eq!(
+            headline(b"**** TODO [#A] Some title [10%] :tag:list: rest\n"),
+            Ok((
+                &b"\n"[..],
+                Headline {
+                    depth: 4,
+                    keyword: Some(format!("TODO")),
+                    priority: Some('A'),
+                    stats: Some(Stat::Percentage(10)),
+                    timestamp: None,
+                    title: Some(format!("Some title rest")),
+                    tags: ordset![format!("tag"), format!("list")],
+                }
+            ))
+        );
     }
 }
